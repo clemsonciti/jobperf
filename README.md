@@ -17,7 +17,9 @@ Pre-built binaries are available as GitHub releases for Linux/amd64.
   - PBS: tested on PBS used on Palmetto at Clemson University.
 - For GPUs, `nvidia-smi` should be installed and available.
 
-### Configuartion
+### Configuration
+
+TODO
 
 ## Build
 
@@ -34,4 +36,26 @@ go build ./cmd/jobperf
 
 The built binary will be available as `jobperf`.
 
-### Default Configuartion
+### Build Configuration
+
+When building the binary, you can embed the version and some default
+configuration parameters with `-ldflags`:
+
+| Parameter                | Meaning                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `buildVersion`           | The build version.                                                            |
+| `buildCommit`            | The build commit.                                                             |
+| `buildDate`              | The build date.                                                               |
+| `defaultSupportURL`      | The URL used for the support link.                                            |
+| `defaultDocsURL`         | The URL used for the documentation link.                                      |
+| `defaultUseOpenOnDemand` | If Open OnDemand should be used as a reverse proxy when HTTP mode is enabled. |
+| `defaultOpenOnDemandURL` | The URL of the Open OnDemand instance to use as reverse proxy.                |
+
+For example, to set the documentation URL to https://example.com when building,
+run:
+
+```
+go build -ldflags='-X main.defaultDocsURL=https://example.com' ./cmd/jobperf
+```
+
+This repo also has a goreleaser configuration file (`.goreleaser.yaml`) which sets these appropriately for the releases.

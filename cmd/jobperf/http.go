@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -289,8 +290,18 @@ func (a *app) sendCPUMemEvent(ctx context.Context, c *websocket.Conn, host strin
 }
 
 func (a *app) jobWSHandler(w http.ResponseWriter, req *http.Request) {
+	// When Open OnDemand proxies the connection, it will rewrite the host header so ot appears cross-origin.
+	var originPatterns []string
+	if a.config.UseOpenOnDemand {
+		u, err := url.Parse(a.config.OpenOnDemandURL)
+		if err != nil {
+			slog.Warn("could not parse Open OnDemandURL", "OpenOnDemandURL", a.config.OpenOnDemandURL, "err", err)
+		} else {
+			originPatterns = append(originPatterns, u.Host)
+		}
+	}
 	c, err := websocket.Accept(w, req, &websocket.AcceptOptions{
-		OriginPatterns: []string{"openod.palmetto.clemson.edu"},
+		OriginPatterns: originPatterns,
 	})
 	if err != nil {
 		slog.Error("failed to accept ws connection", "err", err)
@@ -490,6 +501,8 @@ func (a *app) jobIndexHandler(w http.ResponseWriter, req *http.Request) {
 		PastGPUUsagePerNodeGPU    map[string][]timeSeriesPt
 		PastGPUMemUsagePerNodeGPU map[string][]timeSeriesPt
 		ShouldCollectStats        bool
+		DocsURL                   string
+		SupportURL                string
 	}{
 		Job:       a.job,
 		NodeHosts: nodeHosts,
@@ -508,6 +521,8 @@ func (a *app) jobIndexHandler(w http.ResponseWriter, req *http.Request) {
 		PastGPUUsagePerNodeGPU:    pastGPUUsagePerNodeGPU,
 		PastGPUMemUsagePerNodeGPU: pastGPUMemUsagePerNodeGPU,
 		ShouldCollectStats:        a.shouldCollectStats(),
+		DocsURL:                   a.config.DocsURL,
+		SupportURL:                a.config.SupportURL,
 	})
 	if err != nil {
 		slog.Error("failed to render job index template", "err", err)
@@ -546,7 +561,11 @@ func (a *app) startServer() {
 	http.Handle("/vendor/", http.FileServer(http.FS(vendorFiles)))
 
 	go func() {
-		fmt.Printf("\nStarted server on port %v. View in Open OnDemand: \nhttps://openod.palmetto.clemson.edu/rnode/%v/%v/ \n\n", port, hostname, port)
+		if a.config.UseOpenOnDemand {
+			fmt.Printf("\nStarted server on port %v. View in Open OnDemand: \n%v/rnode/%v/%v/ \n\n", port, a.config.OpenOnDemandURL, hostname, port)
+		} else {
+			fmt.Printf("\nStarted server on port %v. Go to: \nhttp://%v:%v/ \n\n", port, hostname, port)
+		}
 		err = http.Serve(ln, a.logAndAuth(http.DefaultServeMux))
 
 		slog.Debug("server exit", "err", err)

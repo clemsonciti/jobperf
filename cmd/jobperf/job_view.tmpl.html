@@ -47,7 +47,11 @@
   // https://github.com/whatwg/websockets/issues/20
   htmx.createWebSocket = function(inUrl) {
     const url = new URL(inUrl, location.href);
-    url.protocol = 'wss';
+    if (url.protocol == "https") {
+      url.protocol = 'wss';
+    } else {
+      url.protocol = 'ws';
+    }
     return new WebSocket(url);
   };
   </script>
@@ -143,7 +147,7 @@
 <body>
 {{ if .ShouldCollectStats }}
 <nav
-  hx-ext="ws" 
+  hx-ext="ws"
   ws-connect="ws"
   hx-on:htmx:ws-close="this.className = 'status-disconnected'"
   hx-on:htmx:ws-open="this.className = 'status-connected'">
@@ -152,8 +156,8 @@
 {{ end }}
 
   <h1>Jobperf: {{ .Job.ID }}</h1>
-  <a href="https://docs.rcd.clemson.edu/">Docs</a>
-  <a href="https://docs.rcd.clemson.edu/support">Support</a>
+  <a href="{{ .DocsURL }}">Docs</a>
+  <a href="{{ .SupportURL }}">Support</a>
 
 {{ if .ShouldCollectStats }}
   <div class="status-widget">

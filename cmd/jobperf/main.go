@@ -22,9 +22,9 @@ import (
 
 var (
 	// These will get overridden goreleaser.
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	buildVersion = "dev"
+	buildCommit  = "none"
+	buildDate    = "unknown"
 )
 
 var sampleRate = flag.Duration("rate", 2*time.Second, "Node polling rate")
@@ -66,6 +66,7 @@ type app struct {
 	statsMu         *sync.RWMutex
 	engine          jobperf.JobEngine
 	nStatsCollected int
+	config          *config
 
 	*statPubSub
 }
@@ -542,7 +543,7 @@ func main() {
 		logOpts.Level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &logOpts)))
-	slog.Debug("jobperf started", "version", version, "dateBuilt", date, "commitBuilt", commit)
+	slog.Debug("jobperf started", "version", buildVersion, "dateBuilt", buildDate, "commitBuilt", buildCommit)
 
 	if *showVersion {
 		fmt.Printf(`jobperf %v git-%v. Built %v
@@ -562,7 +563,7 @@ executable. Run jobperf -license to view this copy. You can
 also write to the Free Software Foundation, Inc., 
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-`, version, commit, date)
+`, buildVersion, buildCommit, buildDate)
 		os.Exit(0)
 	}
 
@@ -577,6 +578,12 @@ also write to the Free Software Foundation, Inc.,
 	}
 
 	var app app
+	var err error
+	app.config, err = loadConfig()
+	if err != nil {
+		slog.Error("failed to load config", "err", err)
+		os.Exit(1)
+	}
 	app.stats = make(allNodeStats)
 	app.statsMu = new(sync.RWMutex)
 	app.statPubSub = newStatsPubSub()
