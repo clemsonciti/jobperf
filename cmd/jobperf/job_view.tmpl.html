@@ -1,0 +1,486 @@
+{{ define "timeseries-pt" }}
+    {x: '{{ .X.Format "2006-01-02T15:04:05.999999999Z07:00" }}', y: {{ .Y }} },
+{{ end }}
+{{ define "update-cpu-chart" }}
+<script id="cpu-usage-chart-update">
+  cpuUsageChart.data.datasets.find((e) => e.label == '{{ .Hostname }}').data.push(
+    {{ template "timeseries-pt" . }}
+  );
+  cpuUsageChart.update();
+</script>
+{{ end }}
+{{ define "update-mem-chart" }}
+<script id="mem-usage-chart-update">
+  memUsageChart.data.datasets.find((e) => e.label == '{{ .Hostname }}').data.push(
+    {{ template "timeseries-pt" . }}
+  );
+  memUsageChart.update();
+</script>
+{{ end }}
+{{ define "update-gpu-chart" }}
+<script id="gpu-usage-chart-update">
+  gpuUsageChart.data.datasets.find((e) => e.label == '{{ .Name }}').data.push(
+    {{ template "timeseries-pt" . }}
+  );
+  gpuUsageChart.update();
+</script>
+{{ end }}
+{{ define "update-gpu-mem-chart" }}
+<script id="gpu-mem-usage-chart-update">
+  gpuMemUsageChart.data.datasets.find((e) => e.label == '{{ .Name }}').data.push(
+    {{ template "timeseries-pt" . }}
+  );
+  gpuMemUsageChart.update();
+</script>
+{{ end }}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Jobperf: {{ .Job.ID }} </title>
+  <script src="vendor/vendor.js"></script>
+  <script>
+  // Override default websocket connection so we can use relative
+  // URLs. This may not be needed eventually:
+  // https://github.com/whatwg/websockets/issues/20
+  htmx.createWebSocket = function(inUrl) {
+    const url = new URL(inUrl, location.href);
+    url.protocol = 'wss';
+    return new WebSocket(url);
+  };
+  </script>
+  <style>
+    body {
+      margin: 0;
+    }
+    .multi-col {
+      column-count: auto;
+      column-width: 300px;
+      column-rule: 1px solid grey;
+    }
+    table {
+    }
+    .header-align-right th {
+      text-align: right;
+    }
+    .summary-table {
+      & th {
+        text-align: right;
+        padding: 4px 8px 4px 0;
+	width: 50%;
+      }
+      & td {
+        text-align: left;
+        padding: 4px 0 4px 8px;
+	width: 50%;
+      }
+    }
+    .std-table {
+      & th {
+        text-align: left;
+        padding: 4px 16px 4px 0;
+      }
+      & td {
+        text-align: left;
+        padding: 4px 16px 4px 0;
+      }
+    }
+    .no-wrap {
+      white-space: nowrap;
+    }
+    .graph {
+      max-height: 200px;
+    }
+    .connected-widget, .disconnected-widget {
+      display: none;
+    }
+    .status-connected .connected-widget {
+      display: inline;
+    }
+    .status-disconnected .disconnected-widget {
+      display: inline;
+    }
+    nav {
+      position: fixed;
+      top: 0;
+      width: 100%;
+      background-color: #522d80;
+      z-index: 1000;
+      color: white;
+      display: flex;
+      align-items: center;
+      & .status-widget{
+	margin-left: 8px;
+	margin-right: 32px;
+	padding: 8px;
+	border-radius: 4px;
+      }
+      &.status-connected .status-widget{
+	background-color: #198754;
+      }
+      &.status-disconnected .status-widget{
+	background-color: #dc3545;
+      }
+      & h1 {
+	margin-right: auto;
+	margin-left: 32px;
+      }
+      & a:visited, & a:link, & a:hover, & a:active {
+        color: white;
+	margin-right: 32px;
+      }
+    }
+    main {
+      padding: 0 32px;
+      margin: 80px auto;
+      max-width: 1200px;
+    }
+  </style>
+</head>
+
+<body>
+{{ if .ShouldCollectStats }}
+<nav
+  hx-ext="ws" 
+  ws-connect="ws"
+  hx-on:htmx:ws-close="this.className = 'status-disconnected'"
+  hx-on:htmx:ws-open="this.className = 'status-connected'">
+{{ else }}
+<nav>
+{{ end }}
+
+  <h1>Jobperf: {{ .Job.ID }}</h1>
+  <a href="https://docs.rcd.clemson.edu/">Docs</a>
+  <a href="https://docs.rcd.clemson.edu/support">Support</a>
+
+{{ if .ShouldCollectStats }}
+  <div class="status-widget">
+    <div class="connected-widget">Connected</div>
+    <div class="disconnected-widget">Disconnected</div>
+  </div>
+{{ end }}
+
+</nav>
+<main>
+  <h2>Job Summary</h2>
+  <div class="multi-col">
+  <table class="summary-table">
+    <tr><th>Job Name</th><td>{{ .Job.Name }}</td></tr>
+    <tr><th>Job ID</th><td>{{ .Job.ID }}</td></tr>
+    <tr><th>Owner</th><td>{{ .Job.Owner }}</td></tr>
+    <tr><th>State</th><td>{{ .Job.State }}</td></tr>
+    <tr>
+      <th>Number of Nodes</th>
+      {{ if len .Job.Nodes }}
+      <td>{{ len .Job.Nodes }}</td>
+      {{ else }}
+      <td>Unknown</td>
+      {{ end }}
+    </tr>
+    <tr><th>Node(s)</th><td>{{ .NodeHosts }}</td></tr>
+    <tr><th>Cores Total</th><td>{{ .Job.CoresTotal }}</td></tr>
+    <tr><th>Memory Total</th><td>{{ .Job.MemoryTotal }}</td></tr>
+    <tr><th>GPUs Total</th><td>{{ .Job.GPUsTotal }}</td></tr>
+    <tr><th>Walltime Requested</th><td>{{ .Job.Walltime }}</td></tr>
+    <tr><th>Started</th><td>
+      <span class="no-wrap">{{ .Job.StartTime.Format "Jan 02, 2006 " }}</span>
+      <span class="no-wrap">{{ .Job.StartTime.Format "3:04:05 pm MST" }}</span>
+    </td></tr>
+  </table>
+  </div>
+  <h2>Overall Usage</h2>
+  <em>Reported by scheduler which has some limitations in data collection. This data is not updated live.</em>
+  <table class="std-table">
+    <tr><td /><td /><th>Percent of Request Used</th></tr>
+    <tr><th>Walltime</th><td>{{ .Job.UsedWalltime }}</td><td>{{ .UsedWalltimePercent }}</td></tr>
+    <tr><th>Cores</th><td>{{ printf "%.2f" .UsedCores }}</td><td>{{ .UsedCoresPercent }}</td></tr>
+    <tr><th>Memory</th><td>{{ .Job.UsedMemory }}</td><td>{{ .UsedMemoryPercent }}</td></tr>
+  </table>
+
+
+  {{ if .AvgNodeUsage }}
+  <h2>Node Average</h2>
+  <table class="std-table">
+    <tr>
+    	<th>Node</th>
+	<th>Avg Cores Used</th>
+    	<th>Cores Allocated</th>
+    	<th>Max Memory Used</th>
+    	<th>Memory Allocated</th>
+    </tr>
+    {{ range .AvgNodeUsage }}
+      {{ block "node-avg-row" . }}
+    <tr id="avg-usage-{{ .Hostname }}">
+    	<td>{{ .Hostname }}</td>
+	<td>{{ printf "%.2f" .CoresUsed }} ({{ printf "%.2f" .CoresUsedPercent}}%)</td>
+    	<td>{{ .CoresTotal }}</td>
+    	<td>{{ .MaxMemoryUsed }} ({{ printf "%.2f" .MaxMemoryUsedPercent }}%)</td>
+    	<td>{{ .MemoryTotal }}</td>
+    </tr>
+      {{ end }}
+    {{ end }}
+  </table>
+  {{ end }}
+
+  {{ if .CurrentNodeUsage }}
+  <h2>Latest Node Usage</h2>
+  <table class="std-table">
+    <tr>
+    	<th>Node</th>
+	<th>Cores Used</th>
+    	<th>Cores Allocated</th>
+    	<th>Memory Used</th>
+    	<th>Max Memory Used</th>
+    	<th>Memory Allocated</th>
+    </tr>
+    {{ range .CurrentNodeUsage }}
+      {{ block "node-current-row" . }}
+    <tr id="current-usage-{{ .Hostname }}">
+    	<td>{{ .Hostname }}</td>
+	<td>{{ printf "%.2f" .CoresUsed }} ({{ printf "%.2f" .CoresUsedPercent}}%)</td>
+    	<td>{{ .CoresTotal }}</td>
+    	<td>{{ .MemoryUsed }} ({{ printf "%.2f" .MemoryUsedPercent }}%)</td>
+    	<td>{{ .MaxMemoryUsed }} ({{ printf "%.2f" .MaxMemoryUsedPercent }}%)</td>
+    	<td>{{ .MemoryTotal }}</td>
+    </tr>
+      {{ end }}
+    {{ end }}
+  </table>
+  {{ end }}
+
+  {{ if .CurrentGPUUsage }}
+  <h2>Current GPU Usage</h2>
+  <table class="std-table">
+    <tr>
+    	<th>Node</th>
+	<th>GPU ID</th>
+    	<th>Product Name</th>
+    	<th>Compute Usage</th>
+    	<th>Memory Usage</th>
+    	<th>Memory Total</th>
+    </tr>
+    {{ range .CurrentGPUUsage }}
+      {{ block "gpu-current-row" . }}
+    <tr id="current-gpu-usage-{{ .Hostname }}-{{ slugify .ID }}">
+    	<td>{{ .Hostname }}</td>
+    	<td>{{ .ID }}</td>
+    	<td>{{ .ProductName }}</td>
+    	<td>{{ .ComputeUsage }}%</td>
+    	<td>{{ .MemUsageBytes }}</td>
+    	<td>{{ .MemTotalBytes }}</td>
+    </tr>
+      {{ end }}
+    {{ end }}
+  </table>
+  {{ end }}
+
+
+  <script>
+  // Return a pretty string for b bytes.
+  function printBytes(b) {
+    if (b < (1024)) {
+      return `${b} B`;
+    }
+    if (b < (1024*1024)) {
+      return `${(b/1024).toFixed(2)} KiB`;
+    }
+    if (b < (1024*1024*1024)) {
+      return `${(b/1024/1024).toFixed(2)} MiB`;
+    }
+    if (b < (1024*1024*1024*1024)) {
+      return `${(b/1024/1024/1024).toFixed(2)} GiB`;
+    }
+    return `${(b/1024/1024/1024/1024).toFixed(2)} TiB`;
+  }
+  </script>
+
+  {{ if .PastCPUUsagePerNode }}
+  <h2>CPU Usage</h2>
+
+  <canvas class="graph" id="cpu-usage-chart"></canvas>
+
+  <script>
+    // Chart configuration
+    let cpuCtx = document.getElementById('cpu-usage-chart').getContext('2d');
+    let cpuUsageChart = new Chart(cpuCtx, {
+      type: 'line',
+      data: {
+        datasets: [
+	{{ range $name, $data := .PastCPUUsagePerNode }}
+	  {
+	    label: '{{ $name }}',
+	    data: [
+	      {{ range $data }}
+                {{ template "timeseries-pt" . }}
+	      {{ end }}
+            ]
+          },
+        {{ end }}
+        ]
+      },
+      options: {
+	animation: false,
+        scales: {
+          x: {
+	    title: 'time',
+            type: 'time',
+            ticks: {
+              source: 'auto'
+            }
+          },
+          y: {
+            title: { display: true,  text: 'Cores Used' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  </script>
+  <script id="cpu-usage-chart-update">
+  </script>
+  {{ end }}
+
+  {{ if .PastMemUsagePerNode }}
+  <h2>Memory Usage</h2>
+
+  <canvas class="graph" id="mem-usage-chart"></canvas>
+
+  <script>
+    let memCtx = document.getElementById('mem-usage-chart').getContext('2d');
+    let memUsageChart = new Chart(memCtx, {
+      type: 'line',
+      data: {
+        datasets: [
+	{{ range $name, $data := .PastMemUsagePerNode }}
+	  {
+	    label: '{{ $name }}',
+	    data: [
+	      {{ range $data }}
+                {{ template "timeseries-pt" . }}
+	      {{ end }}
+            ]
+          },
+        {{ end }}
+        ]
+      },
+      options: {
+	animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            ticks: {
+              source: 'auto'
+            }
+          },
+          y: {
+            beginAtZero: true,
+	    ticks: {
+	      callback: (value, index, ticks) => printBytes(value),
+	    }
+          }
+        }
+      }
+    });
+  </script>
+  <script id="mem-usage-chart-update">
+  </script>
+  {{ end }}
+
+  {{ if .PastGPUUsagePerNodeGPU }}
+  <h2>GPU Compute Usage</h2>
+
+  <canvas class="graph" id="gpu-usage-chart"></canvas>
+
+  <script>
+    // Chart configuration
+    let gpuCtx = document.getElementById('gpu-usage-chart').getContext('2d');
+    let gpuUsageChart = new Chart(gpuCtx, {
+      type: 'line',
+      data: {
+        datasets: [
+	{{ range $name, $data := .PastGPUUsagePerNodeGPU }}
+	  {
+	    label: '{{ $name }}',
+	    data: [
+	      {{ range $data }}
+                {{ template "timeseries-pt" . }}
+	      {{ end }}
+            ]
+          },
+        {{ end }}
+        ]
+      },
+      options: {
+	animation: false,
+        scales: {
+          x: {
+	    title: 'time',
+            type: 'time',
+            ticks: {
+              source: 'auto'
+            }
+          },
+          y: {
+            title: { display: true,  text: 'Compute Used (%)' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  </script>
+  <script id="gpu-usage-chart-update">
+  </script>
+  {{ end }}
+
+  {{ if .PastGPUMemUsagePerNodeGPU }}
+  <h2>GPU Memory Usage</h2>
+
+  <canvas class="graph" id="gpu-mem-usage-chart"></canvas>
+
+  <script>
+    let gpuMemCtx = document.getElementById('gpu-mem-usage-chart').getContext('2d');
+    let gpuMemUsageChart = new Chart(gpuMemCtx, {
+      type: 'line',
+      data: {
+        datasets: [
+	{{ range $name, $data := .PastGPUMemUsagePerNodeGPU }}
+	  {
+	    label: '{{ $name }}',
+	    data: [
+	      {{ range $data }}
+                {{ template "timeseries-pt" . }}
+	      {{ end }}
+            ]
+          },
+        {{ end }}
+        ]
+      },
+      options: {
+	animation: false,
+        scales: {
+          x: {
+            type: 'time',
+            ticks: {
+              source: 'auto'
+            }
+          },
+          y: {
+            beginAtZero: true,
+	    ticks: {
+	      callback: (value, index, ticks) => printBytes(value),
+	    }
+          }
+        }
+      }
+    });
+  </script>
+  <script id="gpu-mem-usage-chart-update">
+  </script>
+  {{ end }}
+
+</main>
+</body>
+
+</html>
