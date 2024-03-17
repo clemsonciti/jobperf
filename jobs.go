@@ -39,6 +39,10 @@ type Job struct {
 	UsedMemory   Bytes
 
 	Nodes []Node
+
+	// Raw holds a scheduler specific type. It can be used by the scheduler
+	// plugin when creating a nodestats session.
+	Raw interface{}
 }
 
 func (j *Job) IsRunning() bool {

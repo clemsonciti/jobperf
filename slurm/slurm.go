@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
 	"time"
 
 	"github.com/clemsonciti/jobperf"
@@ -24,15 +25,37 @@ func IsAvailable() bool {
 	return false
 }
 
-type jobEngine struct{}
+type slurmMode int
+
+const (
+	slurmModeJSON slurmMode = iota
+	slurmModeYAML
+)
+
+type jobEngine struct {
+	mode slurmMode
+}
 
 func NewJobEngine() jobperf.JobEngine {
+	cmd := exec.Command("sacct", "--json")
+	err := cmd.Run()
+	if err == nil {
+		slog.Debug("using json slurm mode")
+		return jobEngine{mode: slurmModeJSON}
+	}
+	cmd = exec.Command("sacct", "--yaml")
+	err = cmd.Run()
+	if err == nil {
+		slog.Debug("using yaml slurm mode")
+		return jobEngine{mode: slurmModeYAML}
+	}
+	slog.Debug("both json and yaml fail")
 	return jobEngine{}
 }
 
-func (_ jobEngine) GetJobByID(jobID string) (*jobperf.Job, error) {
-	squeueJob, squeueErr := squeueGetJobByID(jobID)
-	sacctJob, sacctErr := sacctGetJobByID(jobID)
+func (e jobEngine) GetJobByID(jobID string) (*jobperf.Job, error) {
+	squeueJob, squeueErr := e.squeueGetJobByID(jobID)
+	sacctJob, sacctErr := e.sacctGetJobByID(jobID)
 	slog.Debug("fetching complete", "squeueErr", squeueErr, "sacctErr", sacctErr)
 
 	if squeueErr != nil && sacctErr != nil {
@@ -71,8 +94,22 @@ func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.No
 		"--exact",
 		"--nodes", "1",
 		"--ntasks", "1",
-		"-w", hostname,
-		ex, "-nodestats"}
+		"-w", hostname}
+	if rawSacctJob, ok := j.Raw.(*sacctJob); ok {
+		if rawSacctJob.Partition != "" {
+			params = append(params, "-p", rawSacctJob.Partition)
+		}
+	}
+	// The "-time.Second*5" is a fudge factor and may not be needed. I'm not
+	// sure the behaviour if you request a step with timelimit longer than we
+	// have left.
+	timeLeft := j.Walltime - time.Since(j.StartTime) - time.Second*5
+	if timeLeft > 0 {
+		params = append(params, "-t", strconv.Itoa(int(timeLeft.Minutes())))
+	}
+
+	params = append(params,
+		ex, "-nodestats")
 	if me.Username == "root" {
 		cmdName = "sudo"
 		params = append([]string{"-u", j.Owner, "srun"}, params...)

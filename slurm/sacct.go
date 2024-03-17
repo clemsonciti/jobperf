@@ -10,69 +10,56 @@ import (
 	"time"
 
 	"github.com/clemsonciti/jobperf"
+	"gopkg.in/yaml.v3"
 )
 
 type sacctResponse struct {
-	Meta     meta       `json:"meta"`
-	Jobs     []sacctJob `json:"jobs"`
-	Warnings []any      `json:"warnings"`
-	Errors   []any      `json:"errors"`
+	Meta     meta       `json:"meta" yaml:"meta"`
+	Jobs     []sacctJob `json:"jobs" yaml:"jobs"`
+	Warnings []any      `json:"warnings" yaml:"warnings"`
+	Errors   []any      `json:"errors" yaml:"errors"`
 }
 
 type sacctTresUnit struct {
-	Type  string `json:"type"`
-	Name  string `json:"name"`
-	ID    int    `json:"id"`
-	Count int    `json:"count"`
+	Type  string `json:"type" yaml:"type"`
+	Name  string `json:"name" yaml:"name"`
+	ID    int    `json:"id" yaml:"id"`
+	Count int    `json:"count" yaml:"count"`
 }
 
 type sacctTresTaskUnit struct {
 	sacctTresUnit
-	Node string `json:"node"`
-	Task int    `json:"task"`
+	Node string `json:"node" yaml:"node"`
+	Task int    `json:"task" yaml:"task"`
 }
 
 type sacctJobTres struct {
-	Allocated []sacctTresUnit `json:"allocated"`
-	Requested []sacctTresUnit `json:"requested"`
+	Allocated []sacctTresUnit `json:"allocated" yaml:"allocated"`
+	Requested []sacctTresUnit `json:"requested" yaml:"requested"`
 }
 
 type sacctJobState struct {
-	CurrentRaw json.RawMessage `json:"current"`
-	Reason     string          `json:"reason"`
-}
-
-func (s *sacctJobState) Current() string {
-	var stringState string
-	err := json.Unmarshal(s.CurrentRaw, &stringState)
-	if err == nil {
-		return stringState
-	}
-	var sliceState []string
-	err = json.Unmarshal(s.CurrentRaw, &sliceState)
-	if err == nil {
-		return sliceState[0]
-	}
-
-	return "Unknown"
+	Current jobStatus `json:"current" yaml:"current"`
+	Reason  string    `json:"reason" yaml:"reason"`
 }
 
 type sacctJobTime struct {
 	// Elapsed seems to be in seconds.
-	Elapsed    int           `json:"elapsed"`
-	End        optionalValue `json:"end"`
-	Start      optionalValue `json:"start"`
-	Eligible   int           `json:"eligible"`
-	Submission int           `json:"submission"`
-	Suspended  int           `json:"suspended"`
-	Limit      optionalValue `json:"limit"` // Limit seems to be in minutes.
-	Total      sacctCPUTime  `json:"total"`
-	User       sacctCPUTime  `json:"user"`
+	Elapsed    int           `json:"elapsed" yaml:"elapsed"`
+	End        optionalValue `json:"end" yaml:"end"`
+	Start      optionalValue `json:"start" yaml:"start"`
+	Eligible   int           `json:"eligible" yaml:"eligible"`
+	Submission int           `json:"submission" yaml:"submission"`
+	Suspended  int           `json:"suspended" yaml:"suspended"`
+	// Limit seems to be in minutes.
+	Limit optionalValue `json:"limit" yaml:"limit"`
+	Total sacctCPUTime  `json:"total" yaml:"total"`
+	User  sacctCPUTime  `json:"user" yaml:"user"`
 }
 
 type sacctCPUTime struct {
-	Seconds      int `json:"seconds"`
-	Microseconds int `json:"microseconds"`
+	Seconds      int `json:"seconds" yaml:"seconds"`
+	Microseconds int `json:"microseconds" yaml:"microseconds"`
 }
 
 func (t *sacctCPUTime) toDuration() time.Duration {
@@ -81,40 +68,55 @@ func (t *sacctCPUTime) toDuration() time.Duration {
 }
 
 type sacctJobStepTime struct {
-	Elapsed int           `json:"elapsed"`
-	End     optionalValue `json:"end"`
-	Start   optionalValue `json:"start"`
-	System  sacctCPUTime  `json:"system"`
-	User    sacctCPUTime  `json:"user"`
+	Elapsed int           `json:"elapsed" yaml:"elapsed"`
+	End     optionalValue `json:"end" yaml:"end"`
+	Start   optionalValue `json:"start" yaml:"start"`
+	System  sacctCPUTime  `json:"system" yaml:"system"`
+	User    sacctCPUTime  `json:"user" yaml:"user"`
 }
 
 type sacctJobStepExitCode struct {
-	StatusRaw  json.RawMessage `json:"status"`
-	ReturnCode optionalValue   `json:"return_code"`
+	Status     jobStatus     `json:"status" yaml:"status"`
+	ReturnCode optionalValue `json:"return_code" yaml:"return_code"`
 }
 
-func (s *sacctJobStepExitCode) Status() string {
+type jobStatus string
+
+func (s *jobStatus) UnmarshalYAML(n *yaml.Node) error {
 	var stringState string
-	err := json.Unmarshal(s.StatusRaw, &stringState)
-	if err == nil {
-		return stringState
+	if n.Decode(&stringState) == nil {
+		*s = jobStatus(stringState)
+		return nil
 	}
 	var sliceState []string
-	err = json.Unmarshal(s.StatusRaw, &sliceState)
-	if err == nil {
-		return sliceState[0]
+	if err := n.Decode(&sliceState); err != nil {
+		return err
 	}
+	*s = jobStatus(sliceState[0])
+	return nil
+}
 
-	return "Unknown"
+func (s *jobStatus) UnmarshalJSON(b []byte) error {
+	var stringState string
+	if json.Unmarshal(b, &stringState) == nil {
+		*s = jobStatus(stringState)
+		return nil
+	}
+	var sliceState []string
+	if err := json.Unmarshal(b, &sliceState); err != nil {
+		return err
+	}
+	*s = jobStatus(sliceState[0])
+	return nil
 }
 
 type sacctJobStepNodes struct {
-	Count int      `json:"count"`
-	Range string   `json:"range"`
-	List  []string `json:"list"`
+	Count int      `json:"count" yaml:"count"`
+	Range string   `json:"range" yaml:"range"`
+	List  []string `json:"list" yaml:"list"`
 }
 type sacctJobStepTasks struct {
-	Count int `json:"count"`
+	Count int `json:"count" yaml:"count"`
 }
 type sacctJobStepInfo struct {
 	/*
@@ -123,44 +125,44 @@ type sacctJobStepInfo struct {
 			StepID string `json:"step_id"`
 		} `json:"id"`
 	*/
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 }
 
 type sacctJobStepTresStats struct {
-	Total   []sacctTresUnit     `json:"total"`
-	Average []sacctTresUnit     `json:"average"`
-	Min     []sacctTresTaskUnit `json:"min"`
-	Max     []sacctTresTaskUnit `json:"max"`
+	Total   []sacctTresUnit     `json:"total" yaml:"total"`
+	Average []sacctTresUnit     `json:"average" yaml:"average"`
+	Min     []sacctTresTaskUnit `json:"min" yaml:"min"`
+	Max     []sacctTresTaskUnit `json:"max" yaml:"max"`
 }
 
 type sacctJobStepTres struct {
-	Requested sacctJobStepTresStats `json:"requested"`
-	Consumed  sacctJobStepTresStats `json:"consumed"`
-	Allocated []sacctTresUnit       `json:"allocated"`
+	Requested sacctJobStepTresStats `json:"requested" yaml:"requested"`
+	Consumed  sacctJobStepTresStats `json:"consumed" yaml:"consumed"`
+	Allocated []sacctTresUnit       `json:"allocated" yaml:"allocated"`
 }
 
 type sacctJobStep struct {
 	//State    string               `json:"state"`
-	Time     sacctJobStepTime     `json:"time"`
-	ExitCode sacctJobStepExitCode `json:"exit_code"`
-	Nodes    sacctJobStepNodes    `json:"nodes"`
-	Tasks    sacctJobStepTasks    `json:"tasks"`
-	Step     sacctJobStepInfo     `json:"step"`
-	Tres     sacctJobStepTres     `json:"tres"`
+	Time     sacctJobStepTime     `json:"time" yaml:"time"`
+	ExitCode sacctJobStepExitCode `json:"exit_code" yaml:"exit_code"`
+	Nodes    sacctJobStepNodes    `json:"nodes" yaml:"nodes"`
+	Tasks    sacctJobStepTasks    `json:"tasks" yaml:"tasks"`
+	Step     sacctJobStepInfo     `json:"step" yaml:"step"`
+	Tres     sacctJobStepTres     `json:"tres" yaml:"tres"`
 }
 
 type sacctJob struct {
-	Account         string         `json:"account"`
-	AllocationNodes int            `json:"allocation_nodes"`
-	Cluster         string         `json:"cluster"`
-	JobID           int            `json:"job_id"`
-	Name            string         `json:"name"`
-	Partition       string         `json:"partition"`
-	User            string         `json:"user"`
-	State           sacctJobState  `json:"state"`
-	Steps           []sacctJobStep `json:"steps"`
-	Tres            sacctJobTres   `json:"tres"`
-	Time            sacctJobTime   `json:"time"`
+	Account         string         `json:"account" yaml:"account"`
+	AllocationNodes int            `json:"allocation_nodes" yaml:"allocation_nodes"`
+	Cluster         string         `json:"cluster" yaml:"cluster"`
+	JobID           int            `json:"job_id" yaml:"job_id"`
+	Name            string         `json:"name" yaml:"name"`
+	Partition       string         `json:"partition" yaml:"partition"`
+	User            string         `json:"user" yaml:"user"`
+	State           sacctJobState  `json:"state" yaml:"state"`
+	Steps           []sacctJobStep `json:"steps" yaml:"steps"`
+	Tres            sacctJobTres   `json:"tres" yaml:"tres"`
+	Time            sacctJobTime   `json:"time" yaml:"time"`
 }
 
 func getTresByTypeName(tres []sacctTresUnit, typeName string, name string) (bool, int) {
@@ -180,9 +182,14 @@ func getTresTaskByTypeName(tres []sacctTresTaskUnit, typeName string, name strin
 	return false, 0
 }
 
-func sacctGetJobByID(jobID string) (*jobperf.Job, error) {
+func (e jobEngine) sacctGetJobByID(jobID string) (*jobperf.Job, error) {
 	slog.Debug("fetching job by id", "jobID", jobID, "method", "sacct")
-	cmd := exec.Command("sacct", "--job", jobID, "--json")
+	var cmd *exec.Cmd
+	if e.mode == slurmModeJSON {
+		cmd = exec.Command("sacct", "--job", jobID, "--json")
+	} else {
+		cmd = exec.Command("sacct", "--job", jobID, "--yaml")
+	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -191,24 +198,29 @@ func sacctGetJobByID(jobID string) (*jobperf.Job, error) {
 	}
 
 	var parsed sacctResponse
-	err = json.Unmarshal(out.Bytes(), &parsed)
+	if e.mode == slurmModeJSON {
+		err = json.Unmarshal(out.Bytes(), &parsed)
+	} else {
+		err = yaml.Unmarshal(out.Bytes(), &parsed)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse sacct response for job id %v: %w", jobID, err)
 	}
 	if len(parsed.Jobs) != 1 {
 		return nil, fmt.Errorf("unexpected number of jobs returned from sacct: %v", len(parsed.Jobs))
 	}
-	parsedJob := parsed.Jobs[0]
+	parsedJob := &parsed.Jobs[0]
 
 	jobOut := jobperf.Job{
 		ID:           strconv.Itoa(parsedJob.JobID),
 		Name:         parsedJob.Name,
 		Owner:        parsedJob.User,
-		State:        parsedJob.State.Current(),
+		State:        string(parsedJob.State.Current),
 		StartTime:    time.Unix(parsedJob.Time.Start.number, 0),
 		Walltime:     time.Duration(parsedJob.Time.Limit.number) * time.Minute,
 		UsedWalltime: time.Duration(parsedJob.Time.Elapsed) * time.Second,
 		UsedCPUTime:  parsedJob.Time.Total.toDuration(),
+		Raw:          parsedJob,
 	}
 	_, jobOut.CoresTotal = getTresByTypeName(parsedJob.Tres.Allocated, "cpu", "")
 	_, memMb := getTresByTypeName(parsedJob.Tres.Allocated, "mem", "")
