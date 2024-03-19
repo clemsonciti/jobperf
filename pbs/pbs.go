@@ -71,6 +71,12 @@ func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.No
 
 	return &statsSession, nil
 }
+func (_ jobEngine) Warning() string {
+	return ""
+}
+func (_ jobEngine) NodeStatsWarning() string {
+	return ""
+}
 
 type nodeStatsSession struct {
 	sshConn    *ssh.Client

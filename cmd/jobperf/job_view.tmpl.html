@@ -196,13 +196,13 @@
   </table>
   </div>
   <h2>Overall Usage</h2>
-  <em>Reported by scheduler which has some limitations in data collection. This data is not updated live.</em>
   <table class="std-table">
     <tr><td /><td /><th>Percent of Request Used</th></tr>
     <tr><th>Walltime</th><td>{{ .Job.UsedWalltime }}</td><td>{{ .UsedWalltimePercent }}</td></tr>
     <tr><th>Cores</th><td>{{ printf "%.2f" .UsedCores }}</td><td>{{ .UsedCoresPercent }}</td></tr>
     <tr><th>Memory</th><td>{{ .Job.UsedMemory }}</td><td>{{ .UsedMemoryPercent }}</td></tr>
   </table>
+  <em>{{ .Warning }} This data is not updated live.</em>
 
 
   {{ if .AvgNodeUsage }}
@@ -227,6 +227,7 @@
       {{ end }}
     {{ end }}
   </table>
+  {{ if .NodeStatsWarning }}<em>{{ .NodeStatsWarning }}.</em>{{ end }}
   {{ end }}
 
   {{ if .CurrentNodeUsage }}

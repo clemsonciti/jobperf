@@ -266,7 +266,11 @@ func (a *app) printBasicUsage() {
 	} {
 		fmt.Printf("%20v   %-18v %-12v\n", line[0], line[1], line[2])
 	}
-	fmt.Printf("\n⚠️  The usage above comes from the scheduler and has some limitations.\n\n")
+	if warning := a.engine.Warning(); warning != "" {
+		fmt.Printf("\n⚠️  %v\n\n", warning)
+	} else {
+		fmt.Println()
+	}
 }
 
 func (a *app) printAvgNodeStats() {
@@ -295,7 +299,11 @@ func (a *app) printAvgNodeStats() {
 			fmt.Sprintf("%v (%v)", stat.MaxMemoryUsedBytes, memUsedPer),
 		)
 	}
-	fmt.Println()
+	if warning := a.engine.NodeStatsWarning(); warning != "" {
+		fmt.Printf("\n⚠️  %v\n\n", warning)
+	} else {
+		fmt.Println()
+	}
 }
 func (a *app) printCurrentNodeStats() {
 	a.statsMu.RLock()

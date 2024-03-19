@@ -2,6 +2,7 @@ package slurm
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/clemsonciti/jobperf"
@@ -33,24 +35,73 @@ const (
 )
 
 type jobEngine struct {
-	mode slurmMode
+	mode          slurmMode
+	nodeStatsMode slurmNodeStatsMode
 }
 
 func NewJobEngine() jobperf.JobEngine {
+	engine := jobEngine{
+		mode:          slurmModeJSON,
+		nodeStatsMode: slurmNodeStatsModeCGroup,
+	}
 	cmd := exec.Command("sacct", "--json")
 	err := cmd.Run()
-	if err == nil {
+	if err != nil {
+		cmd = exec.Command("sacct", "--yaml")
+		err = cmd.Run()
+		if err == nil {
+			slog.Debug("using yaml slurm mode")
+			engine.mode = slurmModeYAML
+		} else {
+			slog.Debug("both json and yaml fail")
+		}
+	} else {
 		slog.Debug("using json slurm mode")
-		return jobEngine{mode: slurmModeJSON}
 	}
-	cmd = exec.Command("sacct", "--yaml")
+
+	cmd = exec.Command("scontrol", "show", "config")
+	var cmdOut bytes.Buffer
+	cmd.Stdout = &cmdOut
 	err = cmd.Run()
-	if err == nil {
-		slog.Debug("using yaml slurm mode")
-		return jobEngine{mode: slurmModeYAML}
+	if err != nil {
+		slog.Error("failed to run scontrol show config", "err", err)
+	} else {
+		scanner := bufio.NewScanner(&cmdOut)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "JobAcctGatherType") {
+				continue
+			}
+			gatherType := line[strings.Index(line, "=")+2:]
+			slog.Debug("found JobAcctGatherType", "JobAcctGatherType", gatherType)
+			switch gatherType {
+			case "jobacct_gather/cgroup":
+				engine.nodeStatsMode = slurmNodeStatsModeCGroup
+				engine.nodeStatsMode = slurmNodeStatsModeLinux
+			case "jobacct_gather/linux":
+				engine.nodeStatsMode = slurmNodeStatsModeLinux
+			default:
+				slog.Warn("unknown JobAcctGatherType", "JobAcctGatherType", gatherType)
+			}
+		}
+
 	}
-	slog.Debug("both json and yaml fail")
-	return jobEngine{}
+
+	return engine
+}
+
+func (e jobEngine) Warning() string {
+	return "The job usage comes from slurm's accounting and has some limitations in accuracy."
+}
+func (e jobEngine) NodeStatsWarning() string {
+	if e.nodeStatsMode == slurmNodeStatsModeLinux {
+		return `CGroup gather plugin not in use on this cluster. The fallback approach only 
+gathers perfomance metrics while jobperf is running.
+* Max Memory Used above may be inaccurate
+* The CPU Cores above may be inaccurate`
+	}
+
+	return ""
 }
 
 func (e jobEngine) GetJobByID(jobID string) (*jobperf.Job, error) {
@@ -76,8 +127,9 @@ func (_ jobEngine) SelectJobIDs(q jobperf.JobQuery) ([]string, error) {
 	return nil, nil
 }
 
-func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.NodeStatsSession, error) {
+func (e jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.NodeStatsSession, error) {
 	var session nodeStatsSession
+	session.mode = e.nodeStatsMode
 	var err error
 
 	me, err := user.Current()
@@ -134,24 +186,21 @@ func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.No
 	if err != nil {
 		return nil, fmt.Errorf("failed to make stdout pipe to node %v with srun: %w", hostname, err)
 	}
-	stderr, err := session.cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to make stderr pipe to node %v with srun: %w", hostname, err)
-	}
+	session.cmd.Stderr = os.Stderr
 	err = session.cmd.Start()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start nodestats command on node %v with srun: %w", hostname, err)
 	}
 
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			slog.Debug("nodestats stderr", "node", hostname, "stderr", scanner.Text())
-		}
-	}()
-
 	return &session, nil
 }
+
+type slurmNodeStatsMode int
+
+const (
+	slurmNodeStatsModeCGroup slurmNodeStatsMode = iota
+	slurmNodeStatsModeLinux
+)
 
 type nodeStatsSession struct {
 	cmd       *exec.Cmd
@@ -160,6 +209,7 @@ type nodeStatsSession struct {
 	resReader io.Reader
 	jobID     string
 	userID    string
+	mode      slurmNodeStatsMode
 }
 
 func (s *nodeStatsSession) RequestCPUStats() (*jobperf.NodeStatsCPUMem, error) {
@@ -171,8 +221,12 @@ func (s *nodeStatsSession) RequestCPUStats() (*jobperf.NodeStatsCPUMem, error) {
 		return nil, fmt.Errorf("failed to write payload for slurm node stats request: %w", err)
 	}
 	slog.Debug("sending slurm cpu stats request", "payload", string(payload))
+	requestType := jobperf.NodeStatsRequestTypeSampleCPUMemSlurmCGroup
+	if s.mode == slurmNodeStatsModeLinux {
+		requestType = jobperf.NodeStatsRequestTypeSampleCPUMemSlurmLinux
+	}
 	err = json.NewEncoder(s.reqWriter).Encode(jobperf.NodeStatsRequest{
-		RequestType: jobperf.NodeStatsRequestTypeSampleCPUMemSlurm,
+		RequestType: requestType,
 		Payload:     payload,
 	})
 	if err != nil {

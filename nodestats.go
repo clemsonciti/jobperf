@@ -8,10 +8,11 @@ import (
 type NodeStatsRequestType int
 
 const (
-	NodeStatsRequestTypeSampleCPUMemSlurm NodeStatsRequestType = 0
-	NodeStatsRequestTypeSampleCPUMemPBS   NodeStatsRequestType = 1
-	NodeStatsRequestTypeSampleGPUNvidia   NodeStatsRequestType = 2
-	NodeStatsRequestTypeExit              NodeStatsRequestType = 3
+	NodeStatsRequestTypeSampleCPUMemSlurmCGroup NodeStatsRequestType = iota
+	NodeStatsRequestTypeSampleCPUMemSlurmLinux
+	NodeStatsRequestTypeSampleCPUMemPBS
+	NodeStatsRequestTypeSampleGPUNvidia
+	NodeStatsRequestTypeExit
 )
 
 type NodeStatsRequest struct {

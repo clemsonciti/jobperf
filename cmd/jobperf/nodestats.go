@@ -55,7 +55,7 @@ func getCPUMemStatsForCGroup(cgroup string) (*jobperf.NodeStatsCPUMem, error) {
 	return &stat, nil
 }
 
-func handleCPUMemSlurmRequest(req *jobperf.NodeStatsRequest, w *json.Encoder) error {
+func handleCPUMemSlurmCGroupRequest(req *jobperf.NodeStatsRequest, w *json.Encoder) error {
 	var payload jobperf.NodeStatsCPUMemSlurmPayload
 	err := json.Unmarshal(req.Payload, &payload)
 	if err != nil {
@@ -147,6 +147,8 @@ func runNodeStats() {
 		os.Exit(1)
 	}()
 
+	var sgl slurmGatherLinux
+
 	for {
 		var req jobperf.NodeStatsRequest
 		err := requestDecoder.Decode(&req)
@@ -156,8 +158,10 @@ func runNodeStats() {
 		}
 		slog.Debug("got request", "req", req)
 		switch req.RequestType {
-		case jobperf.NodeStatsRequestTypeSampleCPUMemSlurm:
-			err = handleCPUMemSlurmRequest(&req, responseEncoder)
+		case jobperf.NodeStatsRequestTypeSampleCPUMemSlurmCGroup:
+			err = handleCPUMemSlurmCGroupRequest(&req, responseEncoder)
+		case jobperf.NodeStatsRequestTypeSampleCPUMemSlurmLinux:
+			err = sgl.handleCPUMemSlurmLinuxRequest(&req, responseEncoder)
 		case jobperf.NodeStatsRequestTypeSampleCPUMemPBS:
 			err = handleCPUMemPBSRequest(&req, responseEncoder)
 		case jobperf.NodeStatsRequestTypeSampleGPUNvidia:

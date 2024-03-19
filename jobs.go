@@ -20,6 +20,8 @@ type JobEngine interface {
 	GetJobByID(jobID string) (*Job, error)
 	SelectJobIDs(q JobQuery) ([]string, error)
 	NodeStatsSession(j *Job, hostname string) (NodeStatsSession, error)
+	Warning() string
+	NodeStatsWarning() string
 }
 
 type Job struct {

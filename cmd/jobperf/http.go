@@ -503,6 +503,8 @@ func (a *app) jobIndexHandler(w http.ResponseWriter, req *http.Request) {
 		ShouldCollectStats        bool
 		DocsURL                   string
 		SupportURL                string
+		Warning                   string
+		NodeStatsWarning          string
 	}{
 		Job:       a.job,
 		NodeHosts: nodeHosts,
@@ -523,6 +525,8 @@ func (a *app) jobIndexHandler(w http.ResponseWriter, req *http.Request) {
 		ShouldCollectStats:        a.shouldCollectStats(),
 		DocsURL:                   a.config.DocsURL,
 		SupportURL:                a.config.SupportURL,
+		Warning:                   a.engine.Warning(),
+		NodeStatsWarning:          a.engine.NodeStatsWarning(),
 	})
 	if err != nil {
 		slog.Error("failed to render job index template", "err", err)
