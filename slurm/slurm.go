@@ -77,7 +77,6 @@ func NewJobEngine() jobperf.JobEngine {
 			switch gatherType {
 			case "jobacct_gather/cgroup":
 				engine.nodeStatsMode = slurmNodeStatsModeCGroup
-				engine.nodeStatsMode = slurmNodeStatsModeLinux
 			case "jobacct_gather/linux":
 				engine.nodeStatsMode = slurmNodeStatsModeLinux
 			default:
