@@ -62,6 +62,21 @@ builds:
       - linux
     goarch:
       - amd64
+  - id: "expanse"
+    main: "./cmd/jobperf"
+    binary: "jobperf-expanse"
+    ldflags:
+      - "-X main.buildVersion={{.Version}}"
+      - "-X main.buildCommit={{.Commit}}"
+      - "-X main.buildDate={{.Date}}"
+      - "-X main.defaultUseOpenOnDemand=true"
+      - "-X main.defaultOpenOnDemandURL=https://portal.expanse.sdsc.edu"
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
 
 archives:
   - format: binary
