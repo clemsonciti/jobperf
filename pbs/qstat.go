@@ -120,7 +120,7 @@ func parseExecVNode(execVNode string) ([]jobperf.Node, error) {
 
 func qstatGetJob(jobID string) (*jobperf.Job, error) {
 	slog.Debug("fetching job by id", "jobID", jobID)
-	cmd := exec.Command("/opt/pbs/default/bin/qstat", "-xf", "-Fjson", jobID)
+	cmd := exec.Command(os.Getenv("PBS_EXEC") + "/bin/qstat", "-xf", "-Fjson", jobID)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -220,7 +220,7 @@ type QSelectOptions struct {
 }
 
 func QSelectJobs(opt QSelectOptions) ([]string, error) {
-	cmd := exec.Command("/opt/pbs/default/bin/qselect", "-s", opt.State)
+	cmd := exec.Command(os.Getenv("PBS_EXEC") + "/bin/qselect", "-s", opt.State)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
