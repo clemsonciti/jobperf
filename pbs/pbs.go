@@ -24,21 +24,30 @@ func IsAvailable() bool {
 	return false
 }
 
-type jobEngine struct{}
-
-func NewJobEngine() jobperf.JobEngine {
-	return jobEngine{}
+type jobEngine struct {
+	pbsBinPath string
 }
 
-func (_ jobEngine) GetJobByID(jobID string) (*jobperf.Job, error) {
-	return qstatGetJob(jobID)
+func NewJobEngine() jobperf.JobEngine {
+	var err error
+	var engine jobEngine
+	engine.pbsBinPath, err = exec.LookPath("qstat")
+	if err != nil {
+		slog.Error("failed to find pbs binary path. Defaulting to /opt/pbs/default/bin", "err", err)
+		engine.pbsBinPath = "/opt/pbs/default/bin"
+	}
+	return engine
+}
+
+func (e jobEngine) GetJobByID(jobID string) (*jobperf.Job, error) {
+	return e.qstatGetJob(jobID)
 }
 
 func (_ jobEngine) SelectJobIDs(q jobperf.JobQuery) ([]string, error) {
 	return nil, nil
 }
 
-func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.NodeStatsSession, error) {
+func (e jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.NodeStatsSession, error) {
 	var statsSession nodeStatsSession
 	var err error
 	statsSession.jobID = j.ID
@@ -63,7 +72,7 @@ func (_ jobEngine) NodeStatsSession(j *jobperf.Job, hostname string) (jobperf.No
 	if err != nil {
 		return nil, fmt.Errorf("failed find jobperf: %w", err)
 	}
-	cmd := fmt.Sprintf("/opt/pbs/default/bin/pbs_attach -j %v %v -nodestats", j.ID, ex)
+	cmd := fmt.Sprintf("%s/pbs_attach -j %v %v -nodestats", e.pbsBinPath, j.ID, ex)
 	err = statsSession.sshSession.Start(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed start nodestats with cmd=%v on node %v with ssh: %w", cmd, hostname, err)

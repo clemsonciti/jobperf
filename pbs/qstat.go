@@ -118,9 +118,9 @@ func parseExecVNode(execVNode string) ([]jobperf.Node, error) {
 	return nodes, nil
 }
 
-func qstatGetJob(jobID string) (*jobperf.Job, error) {
+func (e jobEngine) qstatGetJob(jobID string) (*jobperf.Job, error) {
 	slog.Debug("fetching job by id", "jobID", jobID)
-	cmd := exec.Command("/opt/pbs/default/bin/qstat", "-xf", "-Fjson", jobID)
+	cmd := exec.Command(e.pbsBinPath+"/qstat", "-xf", "-Fjson", jobID)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -209,24 +209,7 @@ func qstatGetJob(jobID string) (*jobperf.Job, error) {
 			return nil, fmt.Errorf("failed to parse exec_vnode: %w", err)
 		}
 	}
-	slog.Debug("succesfully parsed qstat response", "job", j)
+	slog.Debug("successfully parsed qstat response", "job", j)
 
 	return &j, nil
-}
-
-type QSelectOptions struct {
-	State string
-	// TODO: support other options
-}
-
-func QSelectJobs(opt QSelectOptions) ([]string, error) {
-	cmd := exec.Command("/opt/pbs/default/bin/qselect", "-s", opt.State)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run qselect with opt %v: %w", opt, err)
-	}
-
-	return strings.Split(out.String(), "\n"), nil
 }

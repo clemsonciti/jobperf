@@ -2,3 +2,4 @@
 /cmd/jobperf/jobperf
 
 dist/
+.DS_Store
