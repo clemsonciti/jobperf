@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 
 	"github.com/clemsonciti/jobperf"
@@ -29,12 +30,13 @@ type jobEngine struct {
 }
 
 func NewJobEngine() jobperf.JobEngine {
-	var err error
 	var engine jobEngine
-	engine.pbsBinPath, err = exec.LookPath("qstat")
+	qstatPath, err := exec.LookPath("qstat")
 	if err != nil {
 		slog.Error("failed to find pbs binary path. Defaulting to /opt/pbs/default/bin", "err", err)
 		engine.pbsBinPath = "/opt/pbs/default/bin"
+	} else {
+		engine.pbsBinPath = path.Dir(qstatPath)
 	}
 	return engine
 }
