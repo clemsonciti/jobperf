@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/user"
 	"path"
 	"strings"
 
@@ -155,8 +156,14 @@ func (s *nodeStatsSession) Close() error {
 
 func connectToNode(host string, username string) (*ssh.Client, error) {
 
-	// TODO: better home folder resolution: spack and root don't use /home/username.
-	keyFile := fmt.Sprintf("/home/%s/.ssh/id_rsa", username)
+	user, err := user.Lookup(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user info for user %s: %w", username, err)
+	}
+	if user.HomeDir == "" {
+		return nil, fmt.Errorf("user %s is missing home directory", username)
+	}
+	keyFile := fmt.Sprintf("%s/.ssh/id_rsa", user.HomeDir)
 	key, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key %s: %w", keyFile, err)
