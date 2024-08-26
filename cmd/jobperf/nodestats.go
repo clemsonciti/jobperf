@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,13 @@ import (
 
 func getCGroupMetric(cgroupName, metricType, metricName string) (int64, error) {
 	slog.Debug("reading cgroup metric", "cgroupName", cgroupName, "metricType", metricType, "metricName", metricName)
-	fileName := fmt.Sprintf("/sys/fs/cgroup/%s/%s/%s", metricType, cgroupName, metricName)
+	var fileName string
+	if metricType == "" {
+		fileName = fmt.Sprintf("/sys/fs/cgroup/%s/%s", cgroupName, metricName)
+	} else {
+		// cgroupv1
+		fileName = fmt.Sprintf("/sys/fs/cgroup/%s/%s/%s", metricType, cgroupName, metricName)
+	}
 	metricStr, err := os.ReadFile(fileName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read metric file %v: %w", fileName, err)
@@ -32,7 +39,37 @@ func getCGroupMetric(cgroupName, metricType, metricName string) (int64, error) {
 
 }
 
+func getCGroupStat(cgroupName, metricName string) (map[string]int64, error) {
+	res := make(map[string]int64)
+	slog.Debug("reading cgroup metric", "cgroupName", cgroupName, "metricName", metricName)
+	fileName := fmt.Sprintf("/sys/fs/cgroup/%s/%s", cgroupName, metricName)
+	file, err := os.Open(fileName)
+	if err != nil {
+		return res, fmt.Errorf("Unable to access metric file %v: %w", fileName, err)
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		key_value := strings.Split(scanner.Text(), " ")
+		if len(key_value) != 2 {
+			return res, fmt.Errorf(
+				"failed to split line '%v' (%v tokens) from file %v",
+				scanner.Text(), len(key_value), fileName)
+		}
+		metricValue, err := strconv.ParseInt(key_value[1], 10, 64)
+		if err != nil {
+			return res, fmt.Errorf("failed to decode metric string %v from file %v: %w", key_value, fileName, err)
+		}
+		res[key_value[0]] = metricValue
+	}
+	if err := scanner.Err(); err != nil {
+		return res, fmt.Errorf("failed to scan metrics from file %v: %w", fileName, err)
+	}
+	slog.Debug("cgroup reading result", "cgroupName", cgroupName, "metricName", metricName, "result", res)
+	return res, nil
+}
+
 func getCPUMemStatsForCGroup(cgroup string) (*jobperf.NodeStatsCPUMem, error) {
+	slog.Debug("using cgroupv1 to get cpu mem stats")
 	var stat jobperf.NodeStatsCPUMem
 	cpuTimeInt, err := getCGroupMetric(cgroup, "cpu", "cpuacct.usage")
 	if err != nil {
@@ -55,16 +92,57 @@ func getCPUMemStatsForCGroup(cgroup string) (*jobperf.NodeStatsCPUMem, error) {
 	return &stat, nil
 }
 
+func getCPUMemStatsForCGroupV2(cgroup string) (*jobperf.NodeStatsCPUMem, error) {
+	slog.Debug("using cgroupv2 to get cpu mem stats")
+	var stat jobperf.NodeStatsCPUMem
+
+	cpuStats, err := getCGroupStat(cgroup, "cpu.stat")
+	if err != nil {
+		return nil, err
+	}
+	usage_usec, ok := cpuStats["usage_usec"]
+	if !ok {
+		return nil, fmt.Errorf("no usage_usec in cgroup file %v/cpu.stat", cgroup)
+	}
+
+	stat.CPUTime = time.Duration(usage_usec * 1000)
+
+	memUsed, err := getCGroupMetric(cgroup, "", "memory.current")
+	if err != nil {
+		return nil, err
+	}
+	stat.MemoryUsedBytes = jobperf.Bytes(memUsed)
+
+	maxMemUsed, err := getCGroupMetric(cgroup, "", "memory.peak")
+	if err != nil {
+		return nil, err
+	}
+	stat.MaxMemoryUsedBytes = jobperf.Bytes(maxMemUsed)
+	stat.SampleTime = time.Now()
+	return &stat, nil
+}
+
 func handleCPUMemSlurmCGroupRequest(req *jobperf.NodeStatsRequest, w *json.Encoder) error {
 	var payload jobperf.NodeStatsCPUMemSlurmPayload
-	err := json.Unmarshal(req.Payload, &payload)
+	var res *jobperf.NodeStatsCPUMem
+	var err error
+	err = json.Unmarshal(req.Payload, &payload)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal cpu mem slurm payload: %w", err)
 	}
 
-	cgroup := fmt.Sprintf("slurm/uid_%v/job_%v", payload.UserID, payload.JobID)
+	// detect cgroups v2 as the absence of the cpu controller
+	// slurm has a more advanced detection in autodetect_cgroup_version() in src/interfaces/cgroup.c
+	_, err = os.Stat("/sys/fs/cgroup/cpu")
+	cgroupsV2 := err != nil
 
-	res, err := getCPUMemStatsForCGroup(cgroup)
+	if cgroupsV2 {
+		cgroup := fmt.Sprintf("system.slice/slurmstepd.scope/job_%v", payload.JobID)
+		res, err = getCPUMemStatsForCGroupV2(cgroup)
+	} else {
+		cgroup := fmt.Sprintf("slurm/uid_%v/job_%v", payload.UserID, payload.JobID)
+		res, err = getCPUMemStatsForCGroup(cgroup)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to fetch cgroup stats for slurm request %v : %w", req, err)
 	}
